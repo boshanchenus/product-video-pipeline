@@ -82,6 +82,19 @@ class ShotRetryRequest(BaseModel):
     prompt: Optional[str] = Field(default=None, min_length=10, max_length=1500)
 
 
+class ShotRewriteRequest(BaseModel):
+    instruction: str = Field(default="", max_length=500)
+
+
+class ShotRewriteResult(BaseModel):
+    title: str = Field(min_length=1, max_length=80)
+    prompt: str = Field(min_length=10, max_length=1500)
+    voiceover: str = Field(default="", max_length=300)
+    overlay_text: str = Field(default="", max_length=40)
+    entry_action: str = Field(default="", max_length=300)
+    exit_action: str = Field(default="", max_length=300)
+
+
 class ContinuityUpdate(BaseModel):
     enabled: bool
 

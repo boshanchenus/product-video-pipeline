@@ -3,11 +3,12 @@ import json
 import re
 import uuid
 from pathlib import Path
+from typing import Optional
 
 import httpx
 
 from .config import settings
-from .models import QAReport, Storyboard, VideoQAReport
+from .models import QAReport, ShotRewriteResult, Storyboard, VideoQAReport
 
 
 def minimax_key(preferred: str) -> str:
@@ -97,6 +98,20 @@ class MockM3Provider:
     async def revise_storyboard(self, board: Storyboard, name: str, points: str,
                                 assets: list[dict], qa: QAReport) -> Storyboard:
         return board.model_copy(deep=True)
+
+    async def rewrite_shot(self, board: Storyboard, position: int, name: str,
+                           points: str, assets: list[dict], qa: Optional[QAReport],
+                           instruction: str) -> ShotRewriteResult:
+        shot = next(item for item in board.shots if item.position == position)
+        direction = instruction.strip() or "优化画面表达并保持卖点清晰"
+        return ShotRewriteResult(
+            title=shot.title,
+            prompt=f"{shot.prompt.rstrip()} 调整要求：{direction}。"[:1500],
+            voiceover=shot.voiceover,
+            overlay_text=shot.overlay_text,
+            entry_action=shot.entry_action,
+            exit_action=shot.exit_action,
+        )
 
     async def review_video(self, shot: dict, video_url: str, image_path: str) -> VideoQAReport:
         return VideoQAReport(passed=True, score=91, issues=[], recommendation="成片与分镜匹配，可以采用。")
@@ -202,6 +217,41 @@ class OpenAIM3Provider:
         content = [{"type": "text", "text": prompt}]
         content.extend({"type": "image_url", "image_url": {"url": data_url(asset["file_path"])}} for asset in assets[:9])
         return Storyboard.model_validate(await self._call(content, 0.1))
+
+    async def rewrite_shot(self, board: Storyboard, position: int, name: str,
+                           points: str, assets: list[dict], qa: Optional[QAReport],
+                           instruction: str) -> ShotRewriteResult:
+        manifest = [{key: asset[key] for key in ("id", "asset_type", "subject_name", "view_tags", "priority", "description", "constraints")} for asset in assets]
+        target = next(shot for shot in board.shots if shot.position == position)
+        neighbors = [
+            shot.model_dump() for shot in board.shots
+            if abs(shot.position - position) <= 1
+        ]
+        target_issues = [
+            issue.model_dump() for issue in (qa.issues if qa else [])
+            if issue.shot_position in {None, position}
+        ]
+        prompt = f"""你是电商短视频分镜编剧。只重写指定镜头的文案，不得改动其他镜头，也不得重新规划整套结构。
+项目工作名：{name}
+商品卖点：{points}
+用户本次要求：{instruction.strip() or '在保持原始创意方向的前提下，提高画面可生成性、卖点表达和前后衔接。'}
+目标镜头位置：{position}
+目标镜头当前内容：{target.model_dump_json()}
+前后相邻镜头：{json.dumps(neighbors, ensure_ascii=False)}
+当前完整分镜（这是唯一可信的最新上下文）：{board.model_dump_json()}
+与目标镜头相关的现有质检问题：{json.dumps(target_issues, ensure_ascii=False)}
+参考素材清单：{json.dumps(manifest, ensure_ascii=False)}
+
+要求：
+1. 只改写 title、prompt、voiceover、overlay_text、entry_action、exit_action；镜头序号、时长、转场类型、尾帧衔接开关、连续性分组和 reference_asset_ids 均由系统保留。
+2. 必须结合前一镜和后一镜，使目标镜头的入场、收尾、主体、场景与运动方向能够自然剪辑，但不要复述或改写相邻镜头。
+3. 项目工作名不是包装品牌；品牌、Logo、容量和包装文字只能使用参考图中清晰可见的原文，无法辨认时不要猜测。
+4. 自然语言统一使用简体中文，包装原文可保留原语言。prompt 不得复制 entry_action/exit_action，也不得包含“镜头衔接：”“开场动作：”“收尾动作：”模板。
+5. 屏显尽量不超过 18 个汉字；旁白使用克制、可验证的体验表达，不得加入医疗化、绝对化或参考素材无法支持的功效。
+仅返回 JSON：{{"title":str,"prompt":str,"voiceover":str,"overlay_text":str,"entry_action":str,"exit_action":str}}"""
+        content = [{"type": "text", "text": prompt}]
+        content.extend({"type": "image_url", "image_url": {"url": data_url(asset["file_path"])}} for asset in assets[:9])
+        return ShotRewriteResult.model_validate(await self._call(content, 0.2))
 
     async def review(self, board: Storyboard, points: str, assets: list[dict]) -> QAReport:
         prompt = f"""审查以下商品视频分镜。检查：是否忠于卖点、是否可能改变包装/商标、镜头是否可生成、前后连续、文案是否违规或夸大；并检查每镜 prompt、entry_action、exit_action 的自然语言是否统一，以及背景颜色、场景、主体状态、光线和运动方向是否真正矛盾。

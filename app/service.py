@@ -9,7 +9,7 @@ import httpx
 
 from .config import settings
 from .db import db, now
-from .models import QAIssue, QAReport, Storyboard, VideoQAReport
+from .models import QAIssue, QAReport, ShotRewriteResult, Storyboard, VideoQAReport
 from .providers import h3_provider, m3_provider
 from .quality import deterministic_qa, merge_qa
 
@@ -240,6 +240,76 @@ async def recheck_storyboard(project_id: str):
          "awaiting_confirmation" if qa.passed else "qa_failed", now(), project_id),
     )
     return qa
+
+
+async def rewrite_storyboard_shot(project_id: str, shot_id: str,
+                                  instruction: str = "") -> ShotRewriteResult:
+    """Ask M3 to rewrite one draft shot while the stored storyboard remains canonical."""
+    project = db.one("SELECT * FROM projects WHERE id=?", (project_id,))
+    shot = db.one(
+        "SELECT * FROM shots WHERE id=? AND project_id=?",
+        (shot_id, project_id),
+    )
+    if not project or not shot:
+        raise KeyError(shot_id)
+    if (project["confirmed_at"] or
+            project["status"] not in {"awaiting_confirmation", "qa_failed", "qa_stale"} or
+            shot["status"] != "draft"):
+        raise ValueError("只有尚未确认的草稿分镜可以让 M3 单镜重写")
+    if not project["script_json"]:
+        raise ValueError("分镜脚本尚未生成")
+
+    board = Storyboard.model_validate_json(project["script_json"])
+    if not any(item.position == shot["position"] for item in board.shots):
+        raise ValueError("分镜计划不存在")
+    qa = QAReport.model_validate_json(project["qa_json"]) if project["qa_json"] else None
+    assets = reference_assets(project_id)
+    rewritten = await m3_provider().rewrite_shot(
+        board, shot["position"], project["name"], project["selling_points"],
+        assets, qa, instruction,
+    )
+
+    timestamp = now()
+    with db.conn() as con:
+        current_project = con.execute(
+            "SELECT status,confirmed_at,script_json,updated_at FROM projects WHERE id=?",
+            (project_id,),
+        ).fetchone()
+        current_shot = con.execute(
+            "SELECT position,status,updated_at FROM shots WHERE id=? AND project_id=?",
+            (shot_id, project_id),
+        ).fetchone()
+        if (not current_project or not current_shot or current_project["confirmed_at"] or
+                current_project["status"] not in {"awaiting_confirmation", "qa_failed", "qa_stale"} or
+                current_shot["status"] != "draft"):
+            raise ValueError("M3 重写期间分镜状态已变化，请重新操作")
+        if (current_project["updated_at"] != project["updated_at"] or
+                current_shot["updated_at"] != shot["updated_at"]):
+            raise ValueError("M3 重写期间分镜已被修改，为避免覆盖新内容，本次结果未保存")
+
+        script = json.loads(current_project["script_json"])
+        plan = next(
+            (item for item in script.get("shots", []) if item.get("position") == current_shot["position"]),
+            None,
+        )
+        if not plan:
+            raise ValueError("分镜计划不存在")
+        rewritten_values = rewritten.model_dump()
+        plan.update(rewritten_values)
+        changed = con.execute(
+            "UPDATE shots SET title=?,prompt=?,voiceover=?,overlay_text=?,updated_at=? "
+            "WHERE id=? AND project_id=? AND status='draft' AND updated_at=?",
+            (rewritten.title, rewritten.prompt, rewritten.voiceover, rewritten.overlay_text,
+             timestamp, shot_id, project_id, shot["updated_at"]),
+        ).rowcount
+        if not changed:
+            raise ValueError("分镜状态已变化，请重新操作")
+        con.execute(
+            "UPDATE projects SET script_json=?,status='qa_stale',"
+            "qa_overridden_at=NULL,qa_override_reason=NULL,updated_at=? WHERE id=?",
+            (json.dumps(script, ensure_ascii=False), timestamp, project_id),
+        )
+    return rewritten
 
 
 async def cache_video(project_id: str, shot_id: str, video_url: str) -> Optional[str]:

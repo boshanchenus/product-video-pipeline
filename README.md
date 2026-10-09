@@ -15,6 +15,7 @@
 - 每个镜头有独立状态、尝试次数、远端任务 ID、错误信息和输出 URL。
 - 启动时自动恢复 `queued/submitted/running` 镜头。
 - 确认前可连续修改多个分镜；保存不会清除旧质检，用户点击“重新评估分镜”后才统一执行规则检查与 M3 质检。
+- 确认前可让 M3 只重写指定镜头的文案；调用时以数据库中的整套最新 Storyboard 为上下文，并补充前后镜头、Reference、卖点和现有质检问题，其他镜头及转场/尾帧/参考图配置保持不变。
 - `retry` 可由用户重试失败镜头或对质检结果不满意的已完成镜头，不会清零累计尝试次数。
 - `resume` 仅继续未完成镜头。
 - M3 检查分为确定性规则检查和可选的模型复核；严重问题阻止确认。
@@ -117,6 +118,7 @@ H3_DISABLE_BACKGROUND_MUSIC=true
 | PATCH | `/api/projects/{id}/references/{asset_id}` | 修改素材分类、描述、约束或设为主参考 |
 | DELETE | `/api/projects/{id}/references/{asset_id}` | 删除素材；最后一张不可删除 |
 | PATCH | `/api/projects/{id}/shots/{shot_id}` | 编辑草稿或成片镜头的完整结构；成片修改后标记为待重生成 |
+| POST | `/api/projects/{id}/shots/{shot_id}/rewrite-script` | 让 M3 基于整套最新上下文只重写一个未确认镜头的文案 |
 | POST | `/api/projects/{id}/recheck-script` | 手动对当前全部分镜执行一次 M3 重新评估 |
 | PATCH | `/api/projects/{id}/shots/{shot_id}/continuity` | 开启/关闭下一次生成时的上一镜尾帧衔接 |
 | PATCH | `/api/projects/{id}/shots/{shot_id}/references` | 人工设置该镜头下一次生成使用的参考图 |

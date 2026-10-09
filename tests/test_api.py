@@ -12,7 +12,7 @@ from app import service
 from app.config import settings
 from app.db import db
 from app.main import app
-from app.models import QAReport, Storyboard
+from app.models import QAReport, ShotRewriteResult, Storyboard
 from app.providers import HttpH3Provider, OpenAIM3Provider, extract_json, h3_prompt_with_audio_direction
 
 
@@ -235,6 +235,67 @@ def test_multiple_shot_edits_are_saved_before_one_manual_recheck(client, monkeyp
     reopened = client.get(f"/api/projects/{project_id}").json()
     assert reopened["qa"] is not None
     assert [shot["title"] for shot in reopened["shots"][:2]] == ["第一镜批量修改", "第二镜批量修改"]
+
+
+def test_m3_rewrites_only_one_draft_shot_with_full_storyboard_context(client, monkeypatch):
+    project_id = create_project(client, name="单镜重写测试", points="轻盈补水，清爽不黏腻")
+    before = client.get(f"/api/projects/{project_id}").json()
+    target = before["shots"][1]
+    original_plans = {item["position"]: item for item in before["script"]["shots"]}
+    captured = {}
+
+    class ContextAwareRewriter:
+        async def rewrite_shot(self, board, position, name, points, assets, qa, instruction):
+            captured.update({
+                "positions": [shot.position for shot in board.shots],
+                "position": position,
+                "name": name,
+                "points": points,
+                "asset_count": len(assets),
+                "qa_score": qa.score if qa else None,
+                "instruction": instruction,
+            })
+            return ShotRewriteResult(
+                title="质地延展特写",
+                prompt="微距展示透明精华在手背轻柔延展，保持参考包装文字、瓶身结构和液体颜色一致。",
+                voiceover="轻盈水感，触肤清爽。",
+                overlay_text="轻盈水感",
+                entry_action="承接上一镜持瓶动作切入手背特写",
+                exit_action="精华完全延展后稳定停留",
+            )
+
+    monkeypatch.setattr(service, "m3_provider", lambda: ContextAwareRewriter())
+    response = client.post(
+        f"/api/projects/{project_id}/shots/{target['id']}/rewrite-script",
+        json={"instruction": "增加质地延展的视觉证据，减少抽象光影"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "qa_stale"
+
+    after = client.get(f"/api/projects/{project_id}").json()
+    assert after["status"] == "qa_stale"
+    assert after["qa"] == before["qa"]
+    assert captured["positions"] == [shot["position"] for shot in before["shots"]]
+    assert captured["position"] == target["position"]
+    assert captured["name"] == "单镜重写测试"
+    assert captured["points"] == "轻盈补水，清爽不黏腻"
+    assert captured["asset_count"] == len(before["reference_assets"])
+    assert captured["qa_score"] == before["qa"]["score"]
+    assert captured["instruction"] == "增加质地延展的视觉证据，减少抽象光影"
+    rewritten_shot = next(shot for shot in after["shots"] if shot["id"] == target["id"])
+    assert rewritten_shot["status"] == "draft"
+    assert rewritten_shot["attempts"] == 0
+    assert after["confirmed_at"] is None
+
+    updated_plans = {item["position"]: item for item in after["script"]["shots"]}
+    assert updated_plans[target["position"]]["title"] == "质地延展特写"
+    assert updated_plans[target["position"]]["duration"] == original_plans[target["position"]]["duration"]
+    assert updated_plans[target["position"]]["transition_type"] == original_plans[target["position"]]["transition_type"]
+    assert updated_plans[target["position"]]["continuity_mode"] == original_plans[target["position"]]["continuity_mode"]
+    assert updated_plans[target["position"]]["reference_asset_ids"] == original_plans[target["position"]]["reference_asset_ids"]
+    for position in original_plans:
+        if position != target["position"]:
+            assert updated_plans[position] == original_plans[position]
 
 
 def test_tail_frame_toggle_persists_before_and_after_generation(client):

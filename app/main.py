@@ -13,8 +13,8 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .db import db, now
-from .models import ContinuityUpdate, QAOverrideRequest, ReferenceAssetUpdate, ShotReferencesUpdate, ShotRetryRequest, ShotUpdate
-from .service import backfill_legacy_continuity_plans, build_project_preview, generate_storyboard, migrate_legacy_reference_assets, recheck_storyboard, worker
+from .models import ContinuityUpdate, QAOverrideRequest, ReferenceAssetUpdate, ShotReferencesUpdate, ShotRetryRequest, ShotRewriteRequest, ShotUpdate
+from .service import backfill_legacy_continuity_plans, build_project_preview, generate_storyboard, migrate_legacy_reference_assets, provider_error_message, recheck_storyboard, rewrite_storyboard_shot, worker
 
 
 @asynccontextmanager
@@ -447,6 +447,19 @@ async def update_shot(project_id: str, shot_id: str, update: ShotUpdate):
     if editable_draft:
         return {"status": "draft_saved", "qa_stale": True, "requires_regeneration": False}
     return {"status": "generated_plan_saved", "qa_stale": False, "requires_regeneration": True}
+
+
+@app.post("/api/projects/{project_id}/shots/{shot_id}/rewrite-script")
+async def rewrite_shot_script(project_id: str, shot_id: str, request: ShotRewriteRequest):
+    try:
+        rewritten = await rewrite_storyboard_shot(project_id, shot_id, request.instruction)
+    except KeyError as exc:
+        raise HTTPException(404, "镜头不存在") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(502, provider_error_message(exc, "M3 单镜重写")) from exc
+    return {"status": "qa_stale", "shot": rewritten.model_dump()}
 
 
 @app.post("/api/projects/{project_id}/recheck-script")
