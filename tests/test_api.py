@@ -77,8 +77,18 @@ def test_complete_mock_pipeline_and_state_guards(client):
 
 def test_export_is_unavailable_until_composite_video_exists(client):
     project_id = create_project(client)
+    stale_preview = settings.data_dir / "previews" / f"{project_id}.mp4"
+    stale_preview.parent.mkdir(parents=True, exist_ok=True)
+    stale_preview.write_bytes(b"stale-video-from-an-earlier-run")
+    db.execute("UPDATE projects SET preview_path=? WHERE id=?", (str(stale_preview), project_id))
+
     project = client.get(f"/api/projects/{project_id}").json()
+    assert project["status"] == "awaiting_confirmation"
+    assert project["preview_ready"] is False
+    assert "preview_url" not in project
     assert "export_url" not in project
+    preview = client.get(f"/api/projects/{project_id}/preview")
+    assert preview.status_code == 404
     response = client.get(f"/api/projects/{project_id}/export")
     assert response.status_code == 404
     assert response.json()["detail"] == "完整成片尚未生成"
@@ -476,7 +486,10 @@ def test_ffmpeg_builds_single_transitioned_project_preview(client):
             "UPDATE shots SET status='succeeded',local_video_path=? WHERE id=?",
             (str(path), shot["id"]),
         )
-    db.execute("UPDATE projects SET status='completed' WHERE id=?", (project_id,))
+    db.execute(
+        "UPDATE projects SET status='completed',confirmed_at='test-confirmed' WHERE id=?",
+        (project_id,),
+    )
 
     preview_path = asyncio.run(service.build_project_preview(project_id))
     assert preview_path

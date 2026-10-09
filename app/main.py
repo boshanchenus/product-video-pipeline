@@ -208,7 +208,15 @@ def get_project(project_id: str):
     if not p:
         raise HTTPException(404, "项目不存在")
     p.pop("image_path", None)
-    if p["preview_ready"]:
+    preview_eligible = (
+        p["preview_ready"]
+        and p["status"] == "completed"
+        and bool(p["confirmed_at"])
+        and bool(p["shots"])
+        and all(shot["status"] == "succeeded" for shot in p["shots"])
+    )
+    p["preview_ready"] = preview_eligible
+    if preview_eligible:
         p["preview_url"] = f"/api/projects/{project_id}/preview"
         p["export_url"] = f"/api/projects/{project_id}/export"
     for shot in p["shots"]:
@@ -340,8 +348,17 @@ def delete_reference_asset(project_id: str, asset_id: str):
 
 @app.get("/api/projects/{project_id}/preview")
 def get_project_preview(project_id: str):
-    project = db.one("SELECT preview_path FROM projects WHERE id=?", (project_id,))
-    if not project or not project["preview_path"]:
+    project = db.one(
+        "SELECT status,confirmed_at,preview_path FROM projects WHERE id=?",
+        (project_id,),
+    )
+    if (not project or project["status"] != "completed" or
+            not project["confirmed_at"] or not project["preview_path"]):
+        raise HTTPException(404, "合成预览尚未生成")
+    if (not db.one("SELECT id FROM shots WHERE project_id=? LIMIT 1", (project_id,)) or db.one(
+        "SELECT id FROM shots WHERE project_id=? AND status!='succeeded' LIMIT 1",
+        (project_id,),
+    )):
         raise HTTPException(404, "合成预览尚未生成")
     path = Path(project["preview_path"]).resolve()
     preview_root = (settings.data_dir / "previews").resolve()
@@ -352,8 +369,17 @@ def get_project_preview(project_id: str):
 
 @app.get("/api/projects/{project_id}/export")
 def export_project_video(project_id: str):
-    project = db.one("SELECT name,preview_path FROM projects WHERE id=?", (project_id,))
-    if not project or not project["preview_path"]:
+    project = db.one(
+        "SELECT name,status,confirmed_at,preview_path FROM projects WHERE id=?",
+        (project_id,),
+    )
+    if (not project or project["status"] != "completed" or
+            not project["confirmed_at"] or not project["preview_path"]):
+        raise HTTPException(404, "完整成片尚未生成")
+    if (not db.one("SELECT id FROM shots WHERE project_id=? LIMIT 1", (project_id,)) or db.one(
+        "SELECT id FROM shots WHERE project_id=? AND status!='succeeded' LIMIT 1",
+        (project_id,),
+    )):
         raise HTTPException(404, "完整成片尚未生成")
     path = Path(project["preview_path"]).resolve()
     preview_root = (settings.data_dir / "previews").resolve()
