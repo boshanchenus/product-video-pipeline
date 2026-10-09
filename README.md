@@ -1,41 +1,124 @@
-# 商品图文生成短视频流水线
+# MiniMax 商品短视频生成工作流
 
-一个可直接运行的 FastAPI MVP：用 M3 把项目级 Reference Library 与卖点转换为结构化分镜，先做规则 + M3 双重质量检查，用户确认后逐镜调用 H3。项目、参考素材、镜头和质检结果写入 SQLite，生成视频缓存到本地，因此可从最近项目重新打开、继续编辑、分镜级重试、失败续跑和服务重启恢复。
+一个面向商品广告创作的 Human-in-the-loop 视频生成 MVP。系统使用 **MiniMax M3** 理解商品参考图、编排分镜并进行脚本/成片质检；用户确认分镜后，再由 **MiniMax H3** 逐镜生成视频。项目状态、素材、脚本、质检报告和成片都可以持久化，支持中断恢复、单镜修改与重试。
 
-## 流程
+> 本项目为 MiniMax FD 面试作业。设计重点不是“一键生成”，而是让不可控的生成过程变成可检查、可修改、可恢复的生产工作流。
 
-`建立 Reference Library → M3 生成分镜 → 自动质检并定向修订（最多 3 版，保留最高分）→ 人工修改/确认 → H3 多参考图或尾帧延续生成 → 本地缓存 + M3 成片质检 → FFmpeg 转场合成预览 → 人工采用或单镜重试`
+[技术架构图](./technical-architecture.png) · [业务流程图](./business-architecture.png) · [完整架构说明](./ARCHITECTURE.md)
 
-关键约束：
+## 核心流程
 
-- 未确认的脚本绝不会调用 H3。
-- 新项目可上传 1–9 张参考图，并为每张图设置主体类型、用途标签、优先级、自由描述和必须保持的特征。
-- Reference Library 支持旧项目自动迁移以及创建后的新增、查看、编辑和删除；生成中的项目会锁定素材修改。
-- M3 为每镜推荐参考素材，用户可逐镜覆盖；独立镜头向 H3 提交所选多张 `reference_image`，尾帧镜头则只提交 `first_frame`。
-- 每个镜头有独立状态、尝试次数、远端任务 ID、错误信息和输出 URL。
-- 启动时自动恢复 `queued/submitted/running` 镜头。
-- 确认前可连续修改多个分镜；保存不会清除旧质检，用户点击“重新评估分镜”后才统一执行规则检查与 M3 质检。
-- 确认前可让 M3 只重写指定镜头的文案；调用时以数据库中的整套最新 Storyboard 为上下文，并补充前后镜头、Reference、卖点和现有质检问题，其他镜头及转场/尾帧/参考图配置保持不变。
-- `retry` 可由用户重试失败镜头或对质检结果不满意的已完成镜头，不会清零累计尝试次数。
-- `resume` 仅继续未完成镜头。
-- M3 检查分为确定性规则检查和可选的模型复核；严重问题阻止确认。
-- 新脚本未达到 70 分或包含硬错误时，M3 会针对质检问题自动修订，最多评估 3 个候选版本；达标立即停止，仍未达标则展示最高分版本供人工修改或采纳，绝不会自动调用 H3。
-- 项目名称只作为内部工作名，包装品牌与文字以 Reference Library 图片为准；包装原文和结构枚举不再被误判为语言混用。
-- 质检未通过时可由用户填写原因并人工采纳；采纳只解除门禁，仍需再次确认才会调用 H3。
-- H3 成片完成后会尝试缓存到 `data/videos/{project_id}/`，并由 M3 给出分数、问题和重试建议。
-- 成片质检不会触发自动重生成；即使评分较低，是否重试也始终由用户决定。
-- M3 会为镜头边界选择直接切、动作匹配、短叠化、淡出换场或尾帧延续；换人物/换场景不会强行使用尾帧。
-- 每个非首镜都提供统一的“插入上一镜尾帧”开关：初始值来自 M3，人工可在确认前或成片后覆盖；设置会持久化，并在下一次生成该镜头时生效。
-- `carry_last_frame` 镜头会等待上一镜成功，从本地视频提取干净尾帧并作为 H3 下一镜的首帧；其他镜头仍可并行生成。
-- 全部镜头完成后，FFmpeg 会统一转场并对音频做交叉淡化，生成 `data/previews/{project_id}.mp4`。合成失败时 UI 回退到逐镜串播。
-- 重试已完成镜头前可编辑当前 H3 Prompt；保存后新 Prompt 会同步写回分镜脚本并用于本次生成。
-- 成片后仍可编辑单镜的标题、时长、Prompt、旁白、屏显、转场和开场/收尾动作；修改后的镜头会进入“待重生成”，旧版整片导出立即失效，所有修改镜头重新生成完成后自动重建预览。
-- 左侧项目栏始终列出最近 50 个项目；刷新后会恢复上次打开的项目，也可以从项目栏永久删除项目及其本地素材。
+```mermaid
+flowchart LR
+    A[Reference Library<br/>1–9 张商品/人物/场景图] --> B[M3<br/>分镜脚本与素材编排]
+    B --> C[规则检查 + M3 复核]
+    C -->|最多 3 个候选版本| D[人工编辑、重写、采纳或确认]
+    D --> E[H3<br/>逐镜视频生成]
+    E --> F[M3 成片质检]
+    F -->|人工决定| G[单镜重试]
+    F --> H[FFmpeg 转场合成]
+    G --> E
+    H --> I[预览与 MP4 导出]
+```
 
-## 快速启动（Mock 模式）
+完整工作流：
 
-需要 Python 3.9 或更高版本。
-整体预览合成与尾帧提取还需要本机安装 `ffmpeg` 和 `ffprobe`。
+`建立 Reference Library → M3 生成分镜 → 自动质检与定向修订 → 人工确认 → H3 多参考图/尾帧延续生成 → M3 成片质检 → FFmpeg 合成 → 预览与导出`
+
+### 为什么保留人工确认
+
+- M3 质检低于门槛时不会自动触发 H3，避免浪费视频生成额度。
+- 用户可以一次修改多个镜头，再手动触发统一复核；旧质检意见会保留，便于逐项修正。
+- 自动修订最多评估 3 个候选版本，达标即停止；都未达标时展示最高分版本，允许人工采纳，但仍需再次确认才会生成视频。
+- 成片质检只给出评分、问题和重试 Prompt，不会无限自动重生成。
+
+## 已实现能力
+
+### 1. 多模态 Reference Library
+
+- 新项目支持上传 1–9 张图片。
+- 每张素材可设置主体类型、视角/用途标签、优先级、自由描述和必须保持的特征。
+- 项目创建后仍可新增、查看、编辑和删除 Reference；生成中的项目会锁定素材修改。
+- M3 在生成与单镜重写时会同时读取素材清单和真实图片，并为每镜推荐 1–4 张相关 Reference；用户可以覆盖选择。
+
+### 2. 可控的 M3 分镜生成
+
+- 输出结构化 Storyboard：标题、时长、H3 Prompt、旁白、屏显、转场、入场/收尾动作、连续性策略和素材引用。
+- 确定性规则检查与 M3 多模态复核合并为统一质量门禁。
+- 针对模型偶发的不规范 JSON，支持首个完整对象提取、语法修复重试和 Pydantic 校验。
+- 单镜重写会提供最新完整 Storyboard、前后镜头、商品卖点、Reference Library 以及与该镜相关的质检问题；其他镜头及其配置保持不变。
+- 包装品牌、Logo、容量以参考图为准，项目工作名不会被当成包装文字。
+
+### 3. 镜头连续性与 H3 生成
+
+- M3 为镜头边界推荐直接切、动作匹配、短叠化、淡出换场或尾帧延续。
+- 用户可以逐镜开启或关闭“插入上一镜尾帧”。
+- 独立镜头向 H3 提交所选多张 Reference；尾帧延续镜头等待上一镜完成，提取真实尾帧并作为下一镜首帧。
+- 换人物、换场景或品牌定帧不强制使用尾帧，避免错误继承上一镜构图。
+- 默认要求 H3 生成统一风格的原生画外音，并禁止各镜头独立生成背景音乐；也可以通过环境变量关闭。
+
+### 4. 失败恢复与本地项目
+
+- 项目、Reference、镜头状态、尝试次数、远端任务 ID、错误和质检结果写入 SQLite。
+- 视频缓存至 `data/videos/{project_id}/`，合成成片位于 `data/previews/`。
+- 服务启动后自动恢复 `queued/submitted/running` 镜头；`resume` 只继续未完成任务。
+- 失败镜头或不满意的成功镜头可以单独修改 Prompt 后重试，不影响其他成片。
+- 成片后仍可修改完整镜头结构；修改会使旧预览和导出立即失效，防止导出历史成片。
+- 左侧项目列表可重新打开或永久删除历史项目。
+
+## M3、图片模型与 H3 的职责边界
+
+当前实现中，**M3 不是静态图片生成器，H3 也没有被当作静态图片生成器使用**：
+
+| 阶段 | 当前组件 | 输入 | 输出 | 状态 |
+|---|---|---|---|---|
+| 素材理解与分镜编排 | MiniMax M3 | 商品图、素材描述、卖点 | Storyboard JSON | 已实现 |
+| 脚本与成片复核 | MiniMax M3 | Storyboard / 视频 / 参考图 | 分数、问题、建议 | 已实现 |
+| 静态关键帧生成 | 独立 Image Provider（如 MiniMax Image-01） | 镜头 Prompt、Reference | 每镜关键帧 | 可选演进 |
+| 视频生成 | MiniMax H3 | Prompt、Reference 或首帧 | 单镜视频与原生音频 | 已实现 |
+| 成片合成 | FFmpeg | 全部成功镜头 | 完整 MP4 | 已实现 |
+
+因此，加入“先生成分镜图再生成视频”并不需要推翻现有架构，只需在 M3 和 H3 之间增加一个可选的 `Image Provider`：
+
+```text
+当前：M3 Storyboard → 人工确认 → H3 视频
+
+演进：M3 Storyboard → Image Provider 关键帧 → 人工确认/修改 → H3 视频
+```
+
+这个演进层适合对人物、产品角度和构图有更严格控制的场景；当前 MVP 直接使用用户上传的 Reference 和上一镜真实尾帧，链路更短、成本更低。Image Provider 尚未接入，README 不将其描述为现有功能。
+
+## 技术架构
+
+```mermaid
+flowchart LR
+    UI[单页 Web UI] --> API[FastAPI]
+    API --> SVC[业务服务 / 状态机]
+    SVC --> M3[M3 Adapter]
+    SVC --> DB[(SQLite)]
+    WORKER[进程内异步 Worker] --> DB
+    WORKER --> H3[H3 Adapter]
+    WORKER --> M3
+    WORKER --> FF[FFmpeg / FFprobe]
+    API --> FS[(本地素材与视频缓存)]
+    FF --> FS
+```
+
+| 层级 | 文件 | 职责 |
+|---|---|---|
+| 展示层 | `app/static/index.html` | 项目导航、Reference CRUD、分镜编辑、质检、预览与导出 |
+| API 层 | `app/main.py` | REST 接口、参数校验、本地媒体访问、状态转换入口 |
+| 业务层 | `app/service.py` | 分镜候选生成、连续性计划、任务调度、恢复、缓存、质检与合成 |
+| Provider 层 | `app/providers.py` | 隔离 M3/H3 HTTP 协议，提供 Mock 与真实实现 |
+| 质量层 | `app/quality.py` | 确定性规则检查、模型报告归一化与合并 |
+| 数据层 | `app/db.py` | SQLite 表结构、迁移和查询封装 |
+| 数据模型 | `app/models.py` | Storyboard、QA、更新请求的 Pydantic Schema |
+
+当前是单机 MVP，API、异步 Worker、SQLite 与文件缓存运行在同一台机器。多实例生产部署时，可将 Worker 替换为 Celery/RQ/Temporal、SQLite 替换为 PostgreSQL、本地文件替换为对象存储；业务状态机和 Provider 接口可以继续沿用。
+
+## 快速运行
+
+要求：Python 3.9+。整体预览合成和尾帧提取需要本机安装 `ffmpeg` 与 `ffprobe`。
 
 ```bash
 python3 -m venv .venv
@@ -45,16 +128,18 @@ cp .env.example .env
 uvicorn app.main:app --reload --port 8000
 ```
 
-打开 <http://127.0.0.1:8000>。Mock 模式不需要密钥，适合先验收完整流程。
+打开 <http://127.0.0.1:8000>。默认是 Mock 模式，不需要 API Key，适合先验收完整状态流。
 
-## 接入 MiniMax M3
+## 接入 MiniMax
 
-M3 适配器使用 OpenAI-compatible `chat/completions` 多模态格式：
+项目允许 M3/H3 使用同一个 MiniMax Key，也允许分别配置；实际可用模型取决于账号权限。
+
+### M3
 
 ```env
+MINIMAX_API_KEY=sk-api-your-key
 M3_MODE=openai
 M3_BASE_URL=https://api.minimax.io/v1
-M3_API_KEY=sk-api-your-key
 M3_MODEL=MiniMax-M3
 M3_TIMEOUT_SECONDS=300
 M3_JSON_REPAIR_ATTEMPTS=2
@@ -64,18 +149,13 @@ M3_STORYBOARD_MAX_ATTEMPTS=3
 M3_STORYBOARD_PASS_SCORE=70
 ```
 
-上面是国际站地址。中国大陆开放平台签发的 Key 使用 `M3_BASE_URL=https://api.minimaxi.com/v1`。
+M3 Adapter 使用 OpenAI-compatible `chat/completions` 多模态格式。中国大陆开放平台可将地址改为 `https://api.minimaxi.com/v1`。
 
-模型必须返回 JSON。程序会从 Markdown code fence 中自动提取 JSON，并再次做本地校验。
-
-## 接入 MiniMax H3
-
-H3 适配器使用 MiniMax 官方 Video Generation V2 异步协议。普通 `sk-api` Key 可同时用于 M3 与 H3，也可以只填写 `MINIMAX_API_KEY` 作为共享 Key：
+### H3
 
 ```env
 H3_MODE=http
 H3_BASE_URL=https://api.minimax.io
-H3_API_KEY=sk-api-your-key
 H3_MODEL=MiniMax-H3
 H3_RESOLUTION=768P
 H3_SUBMIT_PATH=/v2/video_generation
@@ -84,52 +164,29 @@ H3_NATIVE_VOICEOVER=true
 H3_DISABLE_BACKGROUND_MUSIC=true
 ```
 
-上面是国际站地址。中国大陆开放平台的 H3 使用 `H3_BASE_URL=https://api.minimax.cn`；M3 与 H3 的国内域名不同。
+H3 Adapter 使用异步协议：提交任务后持久化 `task_id`，Worker 轮询状态并缓存成功视频。中国大陆开放平台的 H3 地址可配置为 `https://api.minimax.cn`。
 
-提交请求：
+不要提交真实 `.env`；该文件已在 `.gitignore` 中排除。
 
-```json
-{
-  "model": "MiniMax-H3",
-  "content": [
-    {"type": "text", "text": "..."},
-    {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}, "role": "reference_image"}
-  ],
-  "resolution": "768P",
-  "duration": 5,
-  "ratio": "9:16"
-}
-```
-
-提交成功后保存 `task_id`，随后查询 `/v2/query/video_generation/{task_id}`；成功视频地址读取自 `task.content.url`。H3 按量付费权限和余额需要在 MiniMax Open Platform 中开通。
-
-默认使用 H3 原生音频生成每镜画外音，并明确禁止各镜头独立生成背景音乐，避免合成后出现配乐跳变。该模式不调用独立 TTS；H3 原生旁白的音色与逐字准确度仍由模型决定。可通过 `H3_NATIVE_VOICEOVER=false` 关闭旁白，或通过 `H3_DISABLE_BACKGROUND_MUSIC=false` 允许 H3 自行生成单镜音乐。
-
-## API
+## 主要 API
 
 | 方法 | 路径 | 作用 |
 |---|---|---|
-| POST | `/api/projects` | 上传 1–9 张 Reference 图片、素材标记与卖点并创建项目 |
-| GET | `/api/projects` | 查看最近项目列表 |
-| GET | `/api/projects/{id}` | 查看脚本、检查结果和镜头状态 |
-| DELETE | `/api/projects/{id}` | 永久删除项目、镜头、上传图片及本地视频 |
-| GET | `/api/projects/{id}/references/{asset_id}/image` | 读取 Reference 图片 |
-| POST | `/api/projects/{id}/references` | 向 Reference Library 添加图片 |
-| PATCH | `/api/projects/{id}/references/{asset_id}` | 修改素材分类、描述、约束或设为主参考 |
-| DELETE | `/api/projects/{id}/references/{asset_id}` | 删除素材；最后一张不可删除 |
-| PATCH | `/api/projects/{id}/shots/{shot_id}` | 编辑草稿或成片镜头的完整结构；成片修改后标记为待重生成 |
-| POST | `/api/projects/{id}/shots/{shot_id}/rewrite-script` | 让 M3 基于整套最新上下文只重写一个未确认镜头的文案 |
-| POST | `/api/projects/{id}/recheck-script` | 手动对当前全部分镜执行一次 M3 重新评估 |
-| PATCH | `/api/projects/{id}/shots/{shot_id}/continuity` | 开启/关闭下一次生成时的上一镜尾帧衔接 |
-| PATCH | `/api/projects/{id}/shots/{shot_id}/references` | 人工设置该镜头下一次生成使用的参考图 |
-| GET | `/api/projects/{id}/shots/{shot_id}/video` | 播放本地缓存视频 |
-| GET | `/api/projects/{id}/preview` | 播放带转场和音频衔接的合成预览 |
-| GET | `/api/projects/{id}/export` | 下载已合成的完整 MP4 成片 |
-| POST | `/api/projects/{id}/regenerate-script` | 重做分镜与质检 |
-| POST | `/api/projects/{id}/override-qa` | 人工采纳未通过质检的当前脚本 |
-| POST | `/api/projects/{id}/confirm` | 用户确认并开始生成 |
-| POST | `/api/projects/{id}/resume` | 继续所有未完成镜头 |
-| POST | `/api/projects/{id}/shots/{shot_id}/retry` | 使用可选的新 Prompt 重试指定失败或已完成镜头 |
+| `POST` | `/api/projects` | 上传 Reference 与卖点，创建项目并生成分镜 |
+| `GET` | `/api/projects` | 获取最近项目 |
+| `GET/DELETE` | `/api/projects/{id}` | 查看或删除项目 |
+| `POST/PATCH/DELETE` | `/api/projects/{id}/references...` | Reference Library 增删改 |
+| `PATCH` | `/api/projects/{id}/shots/{shot_id}` | 编辑草稿或成片镜头结构 |
+| `POST` | `/api/projects/{id}/shots/{shot_id}/rewrite-script` | M3 基于完整上下文重写单镜脚本 |
+| `POST` | `/api/projects/{id}/recheck-script` | 手动重新评估全部分镜 |
+| `PATCH` | `/api/projects/{id}/shots/{shot_id}/continuity` | 修改尾帧延续策略 |
+| `PATCH` | `/api/projects/{id}/shots/{shot_id}/references` | 修改逐镜 Reference |
+| `POST` | `/api/projects/{id}/override-qa` | 人工采纳未通过的脚本 |
+| `POST` | `/api/projects/{id}/confirm` | 确认分镜并启动 H3 |
+| `POST` | `/api/projects/{id}/resume` | 继续所有未完成镜头 |
+| `POST` | `/api/projects/{id}/shots/{shot_id}/retry` | 修改 Prompt 并重试单镜 |
+| `GET` | `/api/projects/{id}/preview` | 播放合成预览 |
+| `GET` | `/api/projects/{id}/export` | 下载有效的完整 MP4 |
 
 ## 测试
 
@@ -137,6 +194,11 @@ H3_DISABLE_BACKGROUND_MUSIC=true
 pytest -q
 ```
 
-## 生产化建议
+测试覆盖完整 Mock 工作流、状态门禁、脚本修改与手动复核、M3 单镜重写上下文、Reference CRUD、H3 请求结构、失败镜头续跑、尾帧依赖、成片编辑失效旧导出，以及 JSON/QA 容错逻辑。
 
-MVP 的后台 worker 在 API 进程内运行。多实例生产部署时建议将 worker 换成 Celery/RQ/Temporal，并把 SQLite 换成 PostgreSQL；镜头状态机和 Provider 接口可原样保留。
+## 已知边界与下一步
+
+- 当前 Worker 位于 API 进程内，适合演示和单机使用，不适合多实例水平扩展。
+- H3 原生逐镜旁白的音色和逐字准确度由模型决定；若需要广播级一致性，应增加独立 TTS 与全片音轨混合层。
+- 为避免六个镜头生成六段不连续的音乐，默认禁止 H3 生成背景音乐。统一 BGM 更适合在最终合成阶段一次加入。
+- 下一阶段可以实现 `ImageProvider` 接口、关键帧版本管理与人工确认，但它是增量能力，不改变现有 M3 编排、H3 视频生成和项目状态机的主体设计。
