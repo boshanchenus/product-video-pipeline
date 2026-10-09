@@ -579,6 +579,8 @@ async def worker(stop: asyncio.Event):
                     status = "generating"
                 elif any(s == "failed" for s in states):
                     status = "partial_failed"
+                elif any(s == "revision_pending" for s in states):
+                    status = "revision_pending"
                 else:
                     continue
                 db.execute("UPDATE projects SET status=?, updated_at=? WHERE id=?", (status, now(), pid))

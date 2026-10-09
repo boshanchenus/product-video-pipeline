@@ -28,6 +28,7 @@
 - `carry_last_frame` 镜头会等待上一镜成功，从本地视频提取干净尾帧并作为 H3 下一镜的首帧；其他镜头仍可并行生成。
 - 全部镜头完成后，FFmpeg 会统一转场并对音频做交叉淡化，生成 `data/previews/{project_id}.mp4`。合成失败时 UI 回退到逐镜串播。
 - 重试已完成镜头前可编辑当前 H3 Prompt；保存后新 Prompt 会同步写回分镜脚本并用于本次生成。
+- 成片后仍可编辑单镜的标题、时长、Prompt、旁白、屏显、转场和开场/收尾动作；修改后的镜头会进入“待重生成”，旧版整片导出立即失效，所有修改镜头重新生成完成后自动重建预览。
 - 左侧项目栏始终列出最近 50 个项目；刷新后会恢复上次打开的项目，也可以从项目栏永久删除项目及其本地素材。
 
 ## 快速启动（Mock 模式）
@@ -115,12 +116,13 @@ H3_DISABLE_BACKGROUND_MUSIC=true
 | POST | `/api/projects/{id}/references` | 向 Reference Library 添加图片 |
 | PATCH | `/api/projects/{id}/references/{asset_id}` | 修改素材分类、描述、约束或设为主参考 |
 | DELETE | `/api/projects/{id}/references/{asset_id}` | 删除素材；最后一张不可删除 |
-| PATCH | `/api/projects/{id}/shots/{shot_id}` | 保存未确认的分镜修改，并将旧质检标记为失效 |
+| PATCH | `/api/projects/{id}/shots/{shot_id}` | 编辑草稿或成片镜头的完整结构；成片修改后标记为待重生成 |
 | POST | `/api/projects/{id}/recheck-script` | 手动对当前全部分镜执行一次 M3 重新评估 |
 | PATCH | `/api/projects/{id}/shots/{shot_id}/continuity` | 开启/关闭下一次生成时的上一镜尾帧衔接 |
 | PATCH | `/api/projects/{id}/shots/{shot_id}/references` | 人工设置该镜头下一次生成使用的参考图 |
 | GET | `/api/projects/{id}/shots/{shot_id}/video` | 播放本地缓存视频 |
 | GET | `/api/projects/{id}/preview` | 播放带转场和音频衔接的合成预览 |
+| GET | `/api/projects/{id}/export` | 下载已合成的完整 MP4 成片 |
 | POST | `/api/projects/{id}/regenerate-script` | 重做分镜与质检 |
 | POST | `/api/projects/{id}/override-qa` | 人工采纳未通过质检的当前脚本 |
 | POST | `/api/projects/{id}/confirm` | 用户确认并开始生成 |

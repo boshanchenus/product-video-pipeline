@@ -393,10 +393,17 @@ async def update_shot(project_id: str, shot_id: str, update: ShotUpdate):
         ).fetchone()
         if not shot:
             raise HTTPException(404, "镜头不存在")
-        if (not project or project["confirmed_at"] or
-                project["status"] not in {"awaiting_confirmation", "qa_failed", "qa_stale"} or
-                shot["status"] != "draft"):
-            raise HTTPException(409, "只有尚未确认的草稿分镜可以修改")
+        editable_draft = (
+            project and not project["confirmed_at"]
+            and project["status"] in {"awaiting_confirmation", "qa_failed", "qa_stale"}
+            and shot["status"] == "draft"
+        )
+        editable_generated = (
+            project and project["confirmed_at"]
+            and shot["status"] in {"failed", "succeeded", "revision_pending"}
+        )
+        if not editable_draft and not editable_generated:
+            raise HTTPException(409, "只能修改草稿、生成失败或已完成的镜头")
         script = json.loads(project["script_json"])
         plan = next(
             (item for item in script.get("shots", []) if item.get("position") == shot["position"]),
@@ -415,20 +422,31 @@ async def update_shot(project_id: str, shot_id: str, update: ShotUpdate):
             value = getattr(update, key)
             if value is not None:
                 plan[key] = value or (None if key == "continuity_group" else "")
+        generated_note = "分镜结构已修改，当前视频仍是修改前版本；请重新生成本镜头。" if editable_generated else None
+        new_shot_status = "revision_pending" if editable_generated else "draft"
         changed = con.execute(
-            "UPDATE shots SET title=?,duration=?,prompt=?,voiceover=?,overlay_text=?,updated_at=? "
-            "WHERE id=? AND project_id=? AND status='draft'",
+            "UPDATE shots SET title=?,duration=?,prompt=?,voiceover=?,overlay_text=?,status=?,error=?,updated_at=? "
+            "WHERE id=? AND project_id=? AND status=?",
             (update.title, update.duration, update.prompt, update.voiceover, update.overlay_text,
-             timestamp, shot_id, project_id),
+             new_shot_status, generated_note, timestamp, shot_id, project_id, shot["status"]),
         ).rowcount
         if not changed:
             raise HTTPException(409, "镜头状态已变化")
-        con.execute(
-            "UPDATE projects SET script_json=?,status='qa_stale',"
-            "qa_overridden_at=NULL,qa_override_reason=NULL,updated_at=? WHERE id=?",
-            (json.dumps(script, ensure_ascii=False), timestamp, project_id),
-        )
-    return {"status": "draft_saved", "qa_stale": True}
+        if editable_draft:
+            con.execute(
+                "UPDATE projects SET script_json=?,status='qa_stale',"
+                "qa_overridden_at=NULL,qa_override_reason=NULL,updated_at=? WHERE id=?",
+                (json.dumps(script, ensure_ascii=False), timestamp, project_id),
+            )
+        else:
+            con.execute(
+                "UPDATE projects SET script_json=?,status='revision_pending',"
+                "preview_path=NULL,preview_error=NULL,updated_at=? WHERE id=?",
+                (json.dumps(script, ensure_ascii=False), timestamp, project_id),
+            )
+    if editable_draft:
+        return {"status": "draft_saved", "qa_stale": True, "requires_regeneration": False}
+    return {"status": "generated_plan_saved", "qa_stale": False, "requires_regeneration": True}
 
 
 @app.post("/api/projects/{project_id}/recheck-script")
@@ -459,7 +477,7 @@ def update_shot_continuity(project_id: str, shot_id: str, update: ContinuityUpda
             raise HTTPException(404, "镜头不存在")
         if shot["position"] == 1 and update.enabled:
             raise HTTPException(409, "第一镜没有上一镜，不能插入尾帧")
-        if shot["status"] not in {"draft", "failed", "succeeded"}:
+        if shot["status"] not in {"draft", "failed", "succeeded", "revision_pending"}:
             raise HTTPException(409, "镜头正在生成，完成后才能调整尾帧衔接")
         if not project["script_json"]:
             raise HTTPException(409, "分镜脚本尚未生成")
@@ -511,7 +529,7 @@ def update_shot_references(project_id: str, shot_id: str, update: ShotReferences
         project = con.execute("SELECT script_json,confirmed_at FROM projects WHERE id=?", (project_id,)).fetchone()
         if not shot or not project:
             raise HTTPException(404, "镜头不存在")
-        if shot["status"] not in {"draft", "failed", "succeeded"}:
+        if shot["status"] not in {"draft", "failed", "succeeded", "revision_pending"}:
             raise HTTPException(409, "镜头正在生成，完成后才能调整 Reference 图片")
         rows = con.execute(
             f"SELECT id FROM reference_assets WHERE project_id=? AND id IN ({','.join('?' for _ in asset_ids)})",
@@ -623,7 +641,7 @@ def retry_shot(project_id: str, shot_id: str, request: Optional[ShotRetryRequest
     p = db.one("SELECT confirmed_at FROM projects WHERE id=?", (project_id,))
     if not p or not p["confirmed_at"]:
         raise HTTPException(409, "请先确认分镜")
-    if shot["status"] not in {"failed", "succeeded"}:
+    if shot["status"] not in {"failed", "succeeded", "revision_pending"}:
         raise HTTPException(409, "只能重试失败或已生成的镜头")
     if shot["attempts"] >= settings.max_shot_attempts:
         raise HTTPException(409, "镜头已达到最大尝试次数")
@@ -634,7 +652,7 @@ def retry_shot(project_id: str, shot_id: str, request: Optional[ShotRetryRequest
     with db.conn() as con:
         changed = con.execute(
             "UPDATE shots SET prompt=?, status='queued', provider_task_id=NULL, output_url=NULL, local_video_path=NULL, video_qa_json=NULL, error=NULL, updated_at=? "
-            "WHERE id=? AND status IN ('failed','succeeded') AND attempts < ?",
+            "WHERE id=? AND status IN ('failed','succeeded','revision_pending') AND attempts < ?",
             (prompt, timestamp, shot_id, settings.max_shot_attempts),
         ).rowcount
         if not changed:

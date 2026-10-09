@@ -84,6 +84,65 @@ def test_export_is_unavailable_until_composite_video_exists(client):
     assert response.json()["detail"] == "完整成片尚未生成"
 
 
+def test_completed_shots_support_full_plan_edits_and_explicit_regeneration(client):
+    project_id = create_project(client, name="成片后完整编辑")
+    assert client.post(f"/api/projects/{project_id}/confirm").status_code == 200
+    completed = wait_for_status(client, project_id, "completed")
+    first, second = completed["shots"][:2]
+
+    preview_dir = settings.data_dir / "previews"
+    preview_dir.mkdir(parents=True, exist_ok=True)
+    preview_path = preview_dir / f"{project_id}.mp4"
+    preview_path.write_bytes(b"old-composite")
+    db.execute("UPDATE projects SET preview_path=? WHERE id=?", (str(preview_path), project_id))
+
+    def edit(shot, title, transition):
+        response = client.patch(
+            f"/api/projects/{project_id}/shots/{shot['id']}",
+            json={
+                "title": title,
+                "duration": 6,
+                "prompt": f"{title}，保持商品包装、文字和颜色一致，镜头缓慢移动。",
+                "voiceover": f"{title}的新旁白",
+                "overlay_text": title,
+                "transition_type": transition,
+                "transition_duration_ms": 240 if transition != "cut" else 0,
+                "entry_action": "从稳定构图自然开始",
+                "exit_action": "动作结束后稳定停留",
+                "continuity_group": "revised-sequence",
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["requires_regeneration"] is True
+
+    edit(first, "修改后的第一镜", "cut")
+    edit(second, "修改后的第二镜", "dissolve")
+    pending = client.get(f"/api/projects/{project_id}").json()
+    assert pending["status"] == "revision_pending"
+    assert pending["preview_ready"] is False
+    assert "export_url" not in pending
+    assert [shot["status"] for shot in pending["shots"][:2]] == ["revision_pending", "revision_pending"]
+    assert pending["shots"][1]["transition_type"] == "dissolve"
+    assert pending["script"]["shots"][1]["entry_action"] == "从稳定构图自然开始"
+
+    retry_first = client.post(
+        f"/api/projects/{project_id}/shots/{first['id']}/retry",
+        json={"prompt": pending["shots"][0]["prompt"]},
+    )
+    assert retry_first.status_code == 200, retry_first.text
+    still_pending = wait_for_status(client, project_id, "revision_pending")
+    assert next(shot for shot in still_pending["shots"] if shot["id"] == second["id"])["status"] == "revision_pending"
+
+    retry_second = client.post(
+        f"/api/projects/{project_id}/shots/{second['id']}/retry",
+        json={"prompt": pending["shots"][1]["prompt"]},
+    )
+    assert retry_second.status_code == 200, retry_second.text
+    regenerated = wait_for_status(client, project_id, "completed")
+    assert [shot["title"] for shot in regenerated["shots"][:2]] == ["修改后的第一镜", "修改后的第二镜"]
+    assert [shot["attempts"] for shot in regenerated["shots"][:2]] == [2, 2]
+
+
 def test_project_list_edit_and_local_video_reopen(client):
     project_id = create_project(client, name="可继续编辑的项目")
     project = client.get(f"/api/projects/{project_id}").json()
