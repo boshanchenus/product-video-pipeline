@@ -75,6 +75,15 @@ def test_complete_mock_pipeline_and_state_guards(client):
     assert retried["attempts"] == 2
 
 
+def test_export_is_unavailable_until_composite_video_exists(client):
+    project_id = create_project(client)
+    project = client.get(f"/api/projects/{project_id}").json()
+    assert "export_url" not in project
+    response = client.get(f"/api/projects/{project_id}/export")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "完整成片尚未生成"
+
+
 def test_project_list_edit_and_local_video_reopen(client):
     project_id = create_project(client, name="可继续编辑的项目")
     project = client.get(f"/api/projects/{project_id}").json()
@@ -354,9 +363,15 @@ def test_ffmpeg_builds_single_transitioned_project_preview(client):
     reopened = client.get(f"/api/projects/{project_id}").json()
     assert reopened["preview_ready"] is True
     assert reopened["preview_url"].endswith("/preview")
+    assert reopened["export_url"].endswith("/export")
     preview = client.get(reopened["preview_url"])
     assert preview.status_code == 200
     assert len(preview.content) > 1000
+    exported = client.get(reopened["export_url"])
+    assert exported.status_code == 200
+    assert exported.content == preview.content
+    assert "attachment" in exported.headers["content-disposition"]
+    assert ".mp4" in exported.headers["content-disposition"]
 
 
 def test_qa_failure_can_be_human_overridden_without_starting_h3(client):

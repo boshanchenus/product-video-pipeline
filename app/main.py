@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import shutil
 import uuid
 from contextlib import asynccontextmanager
@@ -209,6 +210,7 @@ def get_project(project_id: str):
     p.pop("image_path", None)
     if p["preview_ready"]:
         p["preview_url"] = f"/api/projects/{project_id}/preview"
+        p["export_url"] = f"/api/projects/{project_id}/export"
     for shot in p["shots"]:
         if shot["video_cached"]:
             shot["local_video_url"] = f"/api/projects/{project_id}/shots/{shot['id']}/video"
@@ -346,6 +348,20 @@ def get_project_preview(project_id: str):
     if path.parent != preview_root or not path.is_file():
         raise HTTPException(404, "合成预览不存在")
     return FileResponse(path, media_type="video/mp4")
+
+
+@app.get("/api/projects/{project_id}/export")
+def export_project_video(project_id: str):
+    project = db.one("SELECT name,preview_path FROM projects WHERE id=?", (project_id,))
+    if not project or not project["preview_path"]:
+        raise HTTPException(404, "完整成片尚未生成")
+    path = Path(project["preview_path"]).resolve()
+    preview_root = (settings.data_dir / "previews").resolve()
+    if path.parent != preview_root or not path.is_file():
+        raise HTTPException(404, "完整成片不存在")
+    safe_name = re.sub(r'[\\/:*?"<>|\r\n]+', "-", project["name"]).strip(" .-")[:80]
+    filename = f"{safe_name or 'frameflow-video'}.mp4"
+    return FileResponse(path, media_type="video/mp4", filename=filename)
 
 
 @app.get("/api/projects/{project_id}/shots/{shot_id}/video")
