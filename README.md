@@ -6,6 +6,32 @@
 
 [技术架构图](./technical-architecture.png) · [业务流程图](./business-architecture.png) · [完整架构说明](./ARCHITECTURE.md)
 
+## 下载并启动
+
+需要 Python 3.9+，合成预览和尾帧提取还需要本机安装 `ffmpeg` 与 `ffprobe`。
+
+```bash
+git clone https://github.com/boshanchenus/product-video-pipeline.git
+cd product-video-pipeline
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn app.main:app --reload --port 8000
+```
+
+启动后打开 <http://127.0.0.1:8000>。仓库内置 3 个真实测试项目；第一次启动且本地不存在 `data/` 时，它们会自动加载，其中包含 Reference、分镜、质检记录、逐镜视频和两条完整成片，可以直接浏览和导出。
+
+默认使用 Mock 模式，不填写 API Key 也能体验完整交互。需要真实调用 M3/H3 时，在项目根目录的 `.env` 中填写：
+
+```env
+MINIMAX_API_KEY=sk-api-your-key
+M3_MODE=openai
+H3_MODE=http
+```
+
+也可以分别使用 `M3_API_KEY` 和 `H3_API_KEY`。`.env` 已被 Git 忽略，不会上传到仓库。若希望从空白数据库启动，将 `LOAD_SAMPLE_DATA=false`，并删除本地 `data/` 后重新启动。
+
 ## 核心流程
 
 ```mermaid
@@ -133,20 +159,6 @@ flowchart LR
 | 数据模型 | `app/models.py` | Storyboard、QA、更新请求的 Pydantic Schema |
 
 当前是单机 MVP，API、异步 Worker、SQLite 与文件缓存运行在同一台机器。多实例生产部署时，可将 Worker 替换为 Celery/RQ/Temporal、SQLite 替换为 PostgreSQL、本地文件替换为对象存储；业务状态机和 Provider 接口可以继续沿用。
-
-## 快速运行
-
-要求：Python 3.9+。整体预览合成和尾帧提取需要本机安装 `ffmpeg` 与 `ffprobe`。
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-uvicorn app.main:app --reload --port 8000
-```
-
-打开 <http://127.0.0.1:8000>。默认是 Mock 模式，不需要 API Key，适合先验收完整状态流。
 
 ## 接入 MiniMax
 

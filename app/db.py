@@ -1,8 +1,10 @@
 import json
+import shutil
 import sqlite3
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 
 from .config import settings
 
@@ -13,7 +15,12 @@ def now() -> str:
 
 class Database:
     def __init__(self):
-        settings.data_dir.mkdir(parents=True, exist_ok=True)
+        sample_dir = Path(__file__).resolve().parent.parent / "sample_data"
+        if (settings.load_sample_data and not settings.data_dir.exists()
+                and sample_dir.is_dir()):
+            shutil.copytree(sample_dir, settings.data_dir)
+        else:
+            settings.data_dir.mkdir(parents=True, exist_ok=True)
         self.path = settings.data_dir / "pipeline.db"
         self.lock = threading.RLock()
 

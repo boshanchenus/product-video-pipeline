@@ -10,13 +10,27 @@ from fastapi.testclient import TestClient
 
 from app import service
 from app.config import settings
-from app.db import db
+from app.db import Database, db
 from app.main import app
 from app.models import QAReport, ShotRewriteResult, Storyboard
 from app.providers import HttpH3Provider, OpenAIM3Provider, extract_json, h3_prompt_with_audio_direction
 
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"test-image"
+
+
+def test_new_install_loads_bundled_sample_projects(tmp_path, monkeypatch):
+    sample_target = tmp_path / "data"
+    monkeypatch.setattr(settings, "data_dir", sample_target)
+    monkeypatch.setattr(settings, "load_sample_data", True)
+
+    seeded = Database()
+    seeded.init()
+
+    projects = seeded.all("SELECT id,status FROM projects ORDER BY created_at")
+    assert len(projects) == 3
+    assert sum(project["status"] == "completed" for project in projects) == 2
+    assert len(list((sample_target / "previews").glob("*.mp4"))) == 2
 
 
 @pytest.fixture

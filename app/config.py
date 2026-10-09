@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     data_dir: Path = Path("./data")
+    load_sample_data: bool = True
     minimax_api_key: str = ""
     m3_mode: str = "mock"
     m3_base_url: str = "https://api.minimax.io/v1"
