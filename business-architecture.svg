@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1320" viewBox="0 0 1400 1320">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="9" stdDeviation="13" flood-color="#193828" flood-opacity=".09"/></filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#718078"/></marker>
+    <style>.title{font:700 38px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;fill:#17211b}.sub{font:400 18px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;fill:#69746d}.h{font:700 18px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;fill:#17211b}.p{font:400 14px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;fill:#69746d}.label{font:600 13px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;fill:#69746d}.line{fill:none;stroke:#718078;stroke-width:2;marker-end:url(#arrow)}</style>
+  </defs>
+  <rect width="1400" height="1320" fill="#f3f5f2"/>
+  <text x="70" y="72" class="title">商品短视频流水线 · 业务架构</text><text x="70" y="106" class="sub">从商品 Brief 到逐镜视频结果的完整业务闭环</text>
+
+  <rect x="500" y="150" width="400" height="100" rx="22" fill="#fff" stroke="#dfe5e0" filter="url(#shadow)"/>
+  <text x="700" y="192" text-anchor="middle" class="h">01 · 商品 Brief</text><text x="700" y="220" text-anchor="middle" class="p">上传商品图 · 输入名称与可验证卖点</text>
+  <path d="M700 250V300" class="line"/>
+  <rect x="500" y="300" width="400" height="100" rx="22" fill="#29684a" filter="url(#shadow)"/>
+  <text x="700" y="342" text-anchor="middle" class="h" style="fill:#fff">02 · M3 生成结构化分镜</text><text x="700" y="370" text-anchor="middle" class="p" style="fill:#e1f0e7">镜头、时长、Prompt、旁白与屏显文案</text>
+
+  <path d="M620 400C620 445 420 435 420 480" class="line"/><path d="M780 400C780 445 980 435 980 480" class="line"/>
+  <rect x="230" y="480" width="380" height="100" rx="22" fill="#fff" stroke="#dfe5e0" filter="url(#shadow)"/>
+  <text x="420" y="522" text-anchor="middle" class="h">确定性规则检查</text><text x="420" y="550" text-anchor="middle" class="p">时长 · 顺序 · 风险词 · 卖点关联</text>
+  <rect x="790" y="480" width="380" height="100" rx="22" fill="#fff" stroke="#dfe5e0" filter="url(#shadow)"/>
+  <text x="980" y="522" text-anchor="middle" class="h">M3 多模态复核</text><text x="980" y="550" text-anchor="middle" class="p">原图一致性 · 可生成性 · 连贯性</text>
+  <path d="M420 580C420 625 620 610 620 655" class="line"/><path d="M980 580C980 625 780 610 780 655" class="line"/>
+
+  <rect x="500" y="655" width="400" height="90" rx="22" fill="#fff" stroke="#bfd2c4" stroke-width="2" filter="url(#shadow)"/>
+  <text x="700" y="692" text-anchor="middle" class="h">03 · 合并质量报告</text><text x="700" y="720" text-anchor="middle" class="p">评分、错误、警告与放行结果</text>
+  <path d="M700 745V790" class="line"/>
+  <path d="M700 790L835 865L700 940L565 865Z" fill="#fff" stroke="#d9c592" stroke-width="2" filter="url(#shadow)"/>
+  <text x="700" y="858" text-anchor="middle" class="h">质量检查通过？</text><text x="700" y="886" text-anchor="middle" class="p">严重问题会阻止确认</text>
+
+  <path d="M565 865H295" class="line"/><text x="435" y="846" text-anchor="middle" class="label">未通过</text>
+  <rect x="80" y="815" width="215" height="100" rx="20" fill="#fcebea" stroke="#edc8c5"/>
+  <text x="188" y="855" text-anchor="middle" class="h" style="fill:#9c3631">重做分镜</text><text x="188" y="883" text-anchor="middle" class="p">修改输入或重新生成</text>
+  <path d="M188 815C188 350 450 350 500 350" class="line"/>
+
+  <path d="M700 940C760 965 1035 945 1140 915" class="line" stroke-dasharray="7 7"/><text x="900" y="955" text-anchor="middle" class="label">人工审阅并采纳</text>
+
+  <path d="M835 865H1100" class="line"/><text x="967" y="846" text-anchor="middle" class="label">通过</text>
+  <rect x="1100" y="815" width="220" height="100" rx="20" fill="#e7f2eb" stroke="#bdd4c4"/>
+  <text x="1210" y="855" text-anchor="middle" class="h" style="fill:#245d43">人工修改 / 确认</text><text x="1210" y="883" text-anchor="middle" class="p">修改后复检 · 确认后调用 H3</text>
+  <path d="M1210 915V975C1210 1000 1030 990 980 990" class="line"/>
+
+  <rect x="520" y="970" width="460" height="100" rx="22" fill="#17211b" filter="url(#shadow)"/>
+  <text x="750" y="1012" text-anchor="middle" class="h" style="fill:#fff">04 · H3 逐镜生成</text><text x="750" y="1040" text-anchor="middle" class="p" style="fill:#dce3de">提交单镜任务 · 保存 Task ID · 持续轮询</text>
+  <path d="M750 1070V1120" class="line"/>
+
+  <rect x="270" y="1120" width="350" height="100" rx="22" fill="#fcebea" stroke="#edc8c5"/>
+  <text x="445" y="1162" text-anchor="middle" class="h" style="fill:#9c3631">镜头失败</text><text x="445" y="1190" text-anchor="middle" class="p">单镜重试或批量续跑</text>
+  <rect x="780" y="1120" width="350" height="100" rx="22" fill="#e7f2eb" stroke="#bdd4c4"/>
+  <text x="955" y="1162" text-anchor="middle" class="h" style="fill:#245d43">镜头成功</text><text x="955" y="1190" text-anchor="middle" class="p">尾帧衔接 · FFmpeg 转场与音频合成</text>
+  <path d="M680 1070C680 1100 445 1090 445 1120" class="line"/><path d="M820 1070C820 1100 955 1090 955 1120" class="line"/>
+  <path d="M445 1120C445 1030 490 1020 520 1020" class="line"/><text x="420" y="1063" class="label">重试</text>
+
+  <rect x="70" y="1255" width="1260" height="1" fill="#dfe5e0"/><text x="700" y="1290" text-anchor="middle" class="p">核心约束：脚本须经人工确认才生成；成片质检只给建议，是否重试始终由用户决定。</text>
+</svg>

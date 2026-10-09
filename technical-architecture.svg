@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="960" viewBox="0 0 1600 960">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="10" stdDeviation="15" flood-color="#193828" flood-opacity=".10"/></filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#718078"/></marker>
+    <style>
+      .title{font:700 38px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;fill:#17211b}.sub{font:400 18px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;fill:#69746d}.group{font:700 15px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;fill:#29684a;letter-spacing:2px}.h{font:700 19px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;fill:#17211b}.p{font:400 14px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;fill:#69746d}.edge{font:500 12px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;fill:#69746d}.line{fill:none;stroke:#718078;stroke-width:2;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1600" height="960" fill="#f3f5f2"/>
+  <text x="70" y="72" class="title">商品短视频流水线 · 技术架构</text>
+  <text x="70" y="106" class="sub">浏览器、应用服务、模型适配器与持久化组件之间的数据流</text>
+
+  <rect x="70" y="350" width="190" height="130" rx="22" fill="#fff" stroke="#dfe5e0" filter="url(#shadow)"/>
+  <circle cx="165" cy="385" r="18" fill="#e7f2eb"/><path d="M155 385h20m-10-10v20" stroke="#29684a" stroke-width="2"/>
+  <text x="165" y="430" text-anchor="middle" class="h">浏览器用户</text><text x="165" y="455" text-anchor="middle" class="p">上传 · 审阅 · 确认</text>
+
+  <rect x="335" y="350" width="210" height="130" rx="22" fill="#fff" stroke="#dfe5e0" filter="url(#shadow)"/>
+  <text x="440" y="405" text-anchor="middle" class="h">Frameflow UI</text><text x="440" y="432" text-anchor="middle" class="p">项目导航 · Prompt 编辑</text><text x="440" y="455" text-anchor="middle" class="p">整体串播预览 · 人工重试</text>
+  <path d="M260 415H335" class="line"/><text x="297" y="398" text-anchor="middle" class="edge">HTTP</text>
+
+  <rect x="620" y="160" width="650" height="660" rx="30" fill="#edf3ee" stroke="#cbd9cf" stroke-width="2"/>
+  <text x="660" y="205" class="group">FASTAPI 应用进程</text>
+  <rect x="670" y="245" width="240" height="105" rx="18" fill="#fff" stroke="#d4ded6" filter="url(#shadow)"/>
+  <text x="790" y="287" text-anchor="middle" class="h">API 路由层</text><text x="790" y="315" text-anchor="middle" class="p">校验 · 状态转换 · REST</text>
+  <rect x="980" y="245" width="240" height="105" rx="18" fill="#fff" stroke="#d4ded6" filter="url(#shadow)"/>
+  <text x="1100" y="287" text-anchor="middle" class="h">业务服务层</text><text x="1100" y="315" text-anchor="middle" class="p">分镜 · QA · 任务编排</text>
+  <rect x="670" y="420" width="240" height="105" rx="18" fill="#fff" stroke="#d4ded6" filter="url(#shadow)"/>
+  <text x="790" y="462" text-anchor="middle" class="h">Async Worker + FFmpeg</text><text x="790" y="490" text-anchor="middle" class="p">尾帧依赖 · 转场合成 · 成片质检</text>
+  <rect x="980" y="420" width="240" height="105" rx="18" fill="#fff" stroke="#d4ded6" filter="url(#shadow)"/>
+  <text x="1100" y="462" text-anchor="middle" class="h">Provider Adapters</text><text x="1100" y="490" text-anchor="middle" class="p">M3 / H3 协议隔离</text>
+  <rect x="670" y="610" width="240" height="120" rx="18" fill="#fff" stroke="#d4ded6" filter="url(#shadow)"/>
+  <text x="790" y="655" text-anchor="middle" class="h">SQLite</text><text x="790" y="682" text-anchor="middle" class="p">projects · shots</text><text x="790" y="705" text-anchor="middle" class="p">状态与远端 Task ID</text>
+  <rect x="980" y="610" width="240" height="120" rx="18" fill="#fff" stroke="#d4ded6" filter="url(#shadow)"/>
+  <text x="1100" y="655" text-anchor="middle" class="h">本地文件系统</text><text x="1100" y="682" text-anchor="middle" class="p">原图 · 镜头 · 关键帧</text><text x="1100" y="705" text-anchor="middle" class="p">视频缓存 · 合成预览</text>
+
+  <path d="M545 415C590 415 580 298 670 298" class="line"/><text x="590" y="345" class="edge">REST API</text>
+  <path d="M910 298H980" class="line"/><path d="M1100 350V420" class="line"/>
+  <path d="M790 350V420" class="line"/><path d="M790 525V610" class="line"/><path d="M1100 525V610" class="line"/>
+  <path d="M980 298C925 298 950 670 910 670" class="line"/>
+
+  <rect x="1360" y="280" width="180" height="125" rx="22" fill="#29684a" filter="url(#shadow)"/>
+  <text x="1450" y="330" text-anchor="middle" class="h" style="fill:#fff">M3 服务</text><text x="1450" y="358" text-anchor="middle" class="p" style="fill:#dfeee5">分镜生成 / 复核</text><text x="1450" y="380" text-anchor="middle" class="p" style="fill:#dfeee5">成片评分与建议</text>
+  <rect x="1360" y="535" width="180" height="125" rx="22" fill="#17211b" filter="url(#shadow)"/>
+  <text x="1450" y="585" text-anchor="middle" class="h" style="fill:#fff">H3 服务</text><text x="1450" y="613" text-anchor="middle" class="p" style="fill:#dbe1dd">视频任务提交</text><text x="1450" y="635" text-anchor="middle" class="p" style="fill:#dbe1dd">状态查询</text>
+  <path d="M1220 455C1290 455 1290 342 1360 342" class="line"/><text x="1287" y="380" text-anchor="middle" class="edge">多模态 JSON</text>
+  <path d="M1220 490C1290 490 1290 598 1360 598" class="line"/><text x="1287" y="565" text-anchor="middle" class="edge">Task API</text>
+
+  <rect x="70" y="830" width="1470" height="70" rx="18" fill="#fff" stroke="#dfe5e0"/>
+  <circle cx="108" cy="865" r="8" fill="#29684a"/><text x="130" y="871" class="p">当前为单机 MVP：项目、任务状态、商品图片与生成视频都保存在当前主机，可在服务重启后继续。</text>
+</svg>

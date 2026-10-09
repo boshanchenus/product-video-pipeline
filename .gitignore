@@ -1,0 +1,11 @@
+.env
+.DS_Store
+.venv/
+.venv-python38-backup/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+
+# Runtime state and generated media
+data/
+
